@@ -1,3 +1,5 @@
+#pragma once
+
 #if defined(_WIN32) || defined(WIN32)
 #define PLATFORM_WINDOWS
 #elif defined(__linux__)
@@ -49,7 +51,6 @@ typedef int socklen_t;
 
 #endif // PLATFORM_LINUX
 
-
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
@@ -72,7 +73,7 @@ namespace http
 		FailedReceiveResponse
 	};
 
-	std::ostream& operator<<(std::ostream& os, const Error& orig)
+	static std::ostream& operator<<(std::ostream& os, const Error& orig)
 	{
 		switch (orig)
 		{
@@ -138,7 +139,7 @@ namespace http
 			{
 				std::string contentLength = m_headers["Content-Length"];
 				size_t length = std::stoul(contentLength);
-				m_body = response.substr(bodyStart, length - bodyStart);
+				m_body = response.substr(bodyStart, length);
 			}
 			// The body has been chunk encoded
 			else if (m_headers.find("Transfer-Encoding") != m_headers.end() && m_headers["Transfer-Encoding"] == "chunked")
@@ -198,7 +199,6 @@ namespace http
 
 		// The body of the response
 		inline std::string body() const { return m_body; }
-
 	private:
 		std::string parse_chunk(const std::string& chunk, size_t size)
 		{
@@ -289,7 +289,7 @@ namespace http
 			WSACleanup();
 		}
 
-		Response send(std::string type, std::unordered_map<std::string, std::string> headers = {})
+		Response send(std::string type, std::unordered_map<std::string, std::string> headers = {}, std::string body = "")
 		{
 			m_sock = socket(m_result->ai_family, m_result->ai_socktype, m_result->ai_protocol);
 			if (m_sock == INVALID_SOCKET)
@@ -317,11 +317,16 @@ namespace http
 			ss << type << " " << m_path << " HTTP/1.1\r\n";
 			for (const auto& header : headers)
 				ss << header.first << ": " << header.second << "\r\n";
+
 			if (headers.find("Host") == headers.end())
 				ss << "Host: " << m_host << "\r\n";
 			if (headers.find("Connection") == headers.end())
 				ss << "Connection: close\r\n";
+			if (headers.find("Content-Length") == headers.end() && body != "")
+				ss << "Content-Length: " << body.size() << "\r\n";
+
 			ss << "\r\n";
+			ss << body;
 
 			if (SSL_write(m_ssl, ss.str().c_str(), ss.str().size()) <= 0)
 			{
@@ -359,9 +364,14 @@ namespace http
 			return Response(buffer);
 		}
 	
-		Response get(std::unordered_map<std::string, std::string> headers = {})
+		Response get(std::unordered_map<std::string, std::string> headers = {}, std::string body = "")
 		{
-			return send("GET", headers);
+			return send("GET", headers, body);
+		}
+
+		Response post(std::unordered_map<std::string, std::string> headers = {}, std::string body = "")
+		{
+			return send("POST", headers, body);
 		}
 	private:
 		std::string m_url;

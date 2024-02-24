@@ -137,7 +137,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="get.cpp" />
+    <ClCompile Include="get.h" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="post.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

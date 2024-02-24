@@ -1,11 +1,17 @@
-#include <iostream>
+#pragma once
 
+#include <iostream>
 #include <http.hpp>
 
-int main()
+void post()
 {
-	http::Request req("https://httpbin.org/get");
-	http::Response resp = req.get();
+	http::Request req("https://httpbin.org/post");
+	http::Response resp = req.post(
+		{
+			{"User-Agent", "Test User-Agent"}
+		}, 
+		"{\"test\": 69}"
+	);
 	if (resp.success())
 	{
 		// Get the status line

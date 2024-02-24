@@ -15,7 +15,13 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="get.cpp">
+    <ClCompile Include="get.h">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="post.h">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

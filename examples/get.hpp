@@ -1,15 +1,18 @@
 #pragma once
 
+void get();
+
+#ifdef GET_IMPL
 #include <iostream>
 #include <http.hpp>
 
-void post()
+void get()
 {
-	http::Request req("https://httpbin.org/post");
-	http::Response resp = req.post(
+	http::Request req("https://httpbin.org/get");
+	http::Response resp = req.get(
 		{
 			{"User-Agent", "Test User-Agent"}
-		}, 
+		},
 		"{\"test\": 69}"
 	);
 	if (resp.success())
@@ -25,3 +28,4 @@ void post()
 		std::cout << resp.body() << std::endl;
 	}
 }
+#endif

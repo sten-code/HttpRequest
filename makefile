@@ -1,6 +1,6 @@
 # Compiler and Flags
 CC = g++
-CFLAGS = -Wall -Werror
+CFLAGS = -Wall 
 
 # Directories
 SRC_DIR = examples

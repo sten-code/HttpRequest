@@ -1,7 +1,10 @@
 #include <iostream>
 
-#include "get.h"
-#include "post.h"
+#define GET_IMPL
+#include "get.hpp"
+
+#define POST_IMPL
+#include "post.hpp"
 
 int main()
 {

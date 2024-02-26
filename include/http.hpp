@@ -55,7 +55,6 @@ typedef int socklen_t;
 #include <openssl/ssl.h>
 
 #include <sstream>
-#include <vector>
 #include <unordered_map>
 
 namespace http
@@ -74,7 +73,7 @@ namespace http
 		FailedReceiveResponse
 	};
 
-	static std::ostream& operator<<(std::ostream& os, const Error& orig)
+	[[maybe_unused]] static std::ostream& operator<<(std::ostream& os, const Error& orig)
 	{
 		switch (orig)
 		{

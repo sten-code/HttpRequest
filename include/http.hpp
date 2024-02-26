@@ -60,11 +60,12 @@ typedef int socklen_t;
 
 namespace http
 {
-	enum Error
+	enum class Error
 	{
 		None = 0,
 		InvalidURL,
 		InvalidResponse,
+		InvalidProtocol,
 		FailedAddressResolve,
 		FailedSocketCreation,
 		FailedConnection,
@@ -77,15 +78,16 @@ namespace http
 	{
 		switch (orig)
 		{
-		case None: os << "None"; break;
-		case InvalidURL: os << "Invalid URL"; break;
-		case InvalidResponse: os << "Invalid Response"; break;
-		case FailedAddressResolve: os << "Failed to parse url"; break;
-		case FailedSocketCreation: os << "Failed to create socket"; break;
-		case FailedConnection: os << "Failed to connect to host"; break;
-		case FailedSSLConnection: os << "Failed to connect ssl"; break;
-		case FailedSendRequest: os << "Failed to send request"; break;
-		case FailedReceiveResponse: os << "Failed to receive response"; break;
+		case Error::None: os << "None"; break;
+		case Error::InvalidURL: os << "Invalid URL"; break;
+		case Error::InvalidProtocol: os << "Invalid Protocol"; break;
+		case Error::InvalidResponse: os << "Invalid Response"; break;
+		case Error::FailedAddressResolve: os << "Failed to parse url"; break;
+		case Error::FailedSocketCreation: os << "Failed to create socket"; break;
+		case Error::FailedConnection: os << "Failed to connect to host"; break;
+		case Error::FailedSSLConnection: os << "Failed to connect ssl"; break;
+		case Error::FailedSendRequest: os << "Failed to send request"; break;
+		case Error::FailedReceiveResponse: os << "Failed to receive response"; break;
 		default:
 			os << "Unknown error";
 			return os;
@@ -221,6 +223,13 @@ namespace http
 		std::string m_body = "";			// The body of the response
 	};
 
+	enum class Protocol
+	{
+		None = 0,
+		HTTP,
+		HTTPS
+	};
+
 	class Request
 	{
 	public:
@@ -231,7 +240,7 @@ namespace http
 			size_t pos = url.find("://");
 			if (pos != std::string::npos)
 			{
-				m_protocol = url.substr(0, pos);
+				std::string protocol = url.substr(0, pos);
 				pos += 3; // Move past "://"
 				std::string next = url.substr(pos, url.size() - pos);
 				size_t end = next.find("/");
@@ -245,17 +254,22 @@ namespace http
 					m_host = next.substr(0, end);
 					m_path = next.substr(end, next.size() - end);
 				}
+
+				if (protocol == "https")
+					m_protocol = Protocol::HTTPS;
+				else if (protocol == "http")
+					m_protocol = Protocol::HTTP;
+				else
+				{
+					m_error = Error::InvalidProtocol;
+					return;
+				}
 			}
 			else
 			{
-				//std::cerr << "Invalid URL format" << std::endl;
+				m_error = Error::InvalidURL;
 				return;
 			}
-
-			if (m_protocol == "https")
-				m_port = "443";
-			else if (m_protocol == "http")
-				m_port = "80";
 
 			STARTWSA();
 
@@ -270,9 +284,19 @@ namespace http
 			hints.ai_socktype = SOCK_STREAM;
 			hints.ai_protocol = IPPROTO_TCP;
 
-			if (getaddrinfo(m_host.c_str(), m_port.c_str(), &hints, &m_result) != 0)
+			std::string port;
+			switch (m_protocol)
 			{
-				//std::cerr << "Failed to resolve address" << std::endl;
+				case Protocol::HTTP: port = "80"; break;
+				case Protocol::HTTPS: port = "443"; break;
+				default:
+					m_error = Error::InvalidProtocol;
+					return;
+			}
+
+			if (getaddrinfo(m_host.c_str(), port.c_str(), &hints, &m_result) != 0)
+			{
+				m_error = Error::FailedAddressResolve;
 				WSACleanup();
 				return;
 			}
@@ -291,25 +315,31 @@ namespace http
 
 		Response send(std::string type, std::unordered_map<std::string, std::string> headers = {}, std::string body = "")
 		{
+			if (m_error != Error::None)
+				return Response(m_error);
+
 			m_sock = socket(m_result->ai_family, m_result->ai_socktype, m_result->ai_protocol);
 			if (m_sock == INVALID_SOCKET)
-				return Response(FailedSocketCreation);
+				return Response(Error::FailedSocketCreation);
 
 			if (connect(m_sock, m_result->ai_addr, (int)m_result->ai_addrlen) == SOCKET_ERROR)
 			{
 				closesocket(m_sock);
-				return Response(FailedConnection);
+				return Response(Error::FailedConnection);
 			}
 
-			m_ctx = SSL_CTX_new(SSLv23_client_method());
-			m_ssl = SSL_new(m_ctx);
-			SSL_set_fd(m_ssl, m_sock);
-			if (SSL_connect(m_ssl) != 1)
+			if (m_protocol == Protocol::HTTPS)
 			{
-				SSL_free(m_ssl);
-				closesocket(m_sock);
-				SSL_CTX_free(m_ctx);
-				return Response(FailedSSLConnection);
+				m_ctx = SSL_CTX_new(SSLv23_client_method());
+				m_ssl = SSL_new(m_ctx);
+				SSL_set_fd(m_ssl, m_sock);
+				if (SSL_connect(m_ssl) != 1)
+				{
+					SSL_free(m_ssl);
+					closesocket(m_sock);
+					SSL_CTX_free(m_ctx);
+					return Response(Error::FailedSSLConnection);
+				}
 			}
 
 			// Generate HTTP request
@@ -328,13 +358,25 @@ namespace http
 			ss << "\r\n";
 			ss << body;
 
-			if (SSL_write(m_ssl, ss.str().c_str(), ss.str().size()) <= 0)
+			if (m_protocol == Protocol::HTTPS)
 			{
-				SSL_free(m_ssl);
-				closesocket(m_sock);
-				SSL_CTX_free(m_ctx);
-				return Response(FailedSendRequest);
+				if (SSL_write(m_ssl, ss.str().c_str(), ss.str().size()) <= 0)
+				{
+					SSL_free(m_ssl);
+					closesocket(m_sock);
+					SSL_CTX_free(m_ctx);
+					return Response(Error::FailedSendRequest);
+				}
 			}
+			else if (m_protocol == Protocol::HTTP)
+			{
+				if (::send(m_sock, ss.str().c_str(), ss.str().size(), 0) == -1)
+				{
+					closesocket(m_sock);
+					return Response(Error::FailedSendRequest);
+				}
+			}
+			else return Response(Error::InvalidProtocol);
 
 			std::string buffer;
 			buffer.resize(1000);
@@ -342,15 +384,23 @@ namespace http
 			int totalBytesReceived = 0;
 			while (true)
 			{
-				bytesReceived = SSL_read(m_ssl, &buffer[0] + totalBytesReceived, 1000);
+				if (m_protocol == Protocol::HTTPS)
+					bytesReceived = SSL_read(m_ssl, &buffer[0] + totalBytesReceived, 1000);
+				else if (m_protocol == Protocol::HTTP)
+					bytesReceived = recv(m_sock, &buffer[0] + totalBytesReceived, 1000, 0);
+				else return Response(Error::InvalidProtocol);
+
 				if (bytesReceived <= 0)
 				{
 					if (totalBytesReceived == 0)
 					{
-						SSL_free(m_ssl);
+						if (m_protocol == Protocol::HTTPS)
+						{
+							SSL_free(m_ssl);
+							SSL_CTX_free(m_ctx);
+						}
 						closesocket(m_sock);
-						SSL_CTX_free(m_ctx);
-						return Response(FailedReceiveResponse);
+						return Response(Error::FailedReceiveResponse);
 					}
 					break;
 				}
@@ -358,9 +408,12 @@ namespace http
 				buffer.resize(1000 + totalBytesReceived);
 			}
 
-			SSL_free(m_ssl);
+			if (m_protocol == Protocol::HTTPS)
+			{
+				SSL_free(m_ssl);
+				SSL_CTX_free(m_ctx);
+			}
 			closesocket(m_sock);
-			SSL_CTX_free(m_ctx);
 			return Response(buffer);
 		}
 	
@@ -376,12 +429,13 @@ namespace http
 	private:
 		std::string m_url;
 		std::string m_host;
-		std::string m_protocol;
 		std::string m_port;
 		std::string m_path;
 
-		struct addrinfo* m_result = nullptr;
+		Protocol m_protocol = Protocol::None;
+		Error m_error = Error::None;
 
+		struct addrinfo* m_result = nullptr;
 		SOCKET m_sock = INVALID_SOCKET;
 		SSL_CTX* m_ctx = nullptr;
 		SSL* m_ssl = nullptr;

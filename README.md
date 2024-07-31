@@ -35,6 +35,8 @@ You need to have openssl installed which you can get [here](https://wiki.openssl
 
 You need to compile openssl yourself, which you can get [here](https://github.com/openssl/openssl/releases).
 
+The makefile should automatically do this when compiling the examples
+
 ```bash
 wget https://github.com/openssl/openssl/releases/download/openssl-3.2.1/openssl-3.2.1.tar.gz
 tar -xf openssl-*.tar.gz
